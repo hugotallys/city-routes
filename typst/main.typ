@@ -4,6 +4,17 @@
 #let title = "Título Aqui"
 #let authors = ("Hugo Oliveira", "Matheus Batista")
 
+// Paragraph spacing and identation
+
+#set par(leading: 0.75em, spacing: 1.0em)
+#set par(first-line-indent: (
+  amount: 1.5em,
+  all: true,
+))
+#set block(spacing: 2em)
+
+// Article Header and Title
+
 #show: article.with(
   lang: "pt",
   show-header: true,
@@ -21,11 +32,8 @@
 
 // Table Styling
 
-// Medium bold table header.
-#show table.cell.where(y: 0): set text(weight: "medium")
-
-// Bold titles.
-#show table.cell.where(x: 1): set text(weight: "bold")
+// Bold table header.
+#show table.cell.where(y: 0): set text(weight: "bold")
 
 // See the strokes section for details on this!
 #let frame(stroke) = (x, y) => (
@@ -52,7 +60,26 @@
   caption: [A curious figure.],
 ) <glacier>
 
+A @peasTable contém a modelagem PEAS do problema.
+
 = Modelagem
+
+O objetivo inicial da resolução do problema da rota de menor custo é a construção de uma rede de cidades conectadas por estradas. Tal rede é representada por um grafo $G = (C, E)$, onde $C = {C_1, C_2, dots, C_N}$ é o conjunto de $N$ cidades possíveis de serem visitadas e $E$ o conjunto de estradas que ligam tais cidades. Dadas duas cidades $C_i$ e $C_j$ quaisquer, diremos que existe uma estrada ligando ambas as cidades ($(C_i, C_j) in E$) quando a distância entre elas for menor ou igual a um limiar $r$:
+
+$
+  d(C_i, C_j) <= r
+$
+
+Para efeitos práticos, iremos considerar a função de distância $d$ entre duas cidades como a _distância de Harvesine_ entre suas coordenadas geográficas (latitude e longitude). Mais detalhes sobre como o cálculo dessa distância é feito pode ser consultado na @harvesine do apêndice.
+
+#figure(
+  table(
+    columns: (1fr, 1fr, 1fr, 1fr, 1fr), align: left,
+    table.header[Agente][Medida de Performance][Ambiente][Atuadores][Sensores],
+    "Sistema de\nPlanejamento de Rota", "Rota de menor distância,\nvisitar cidades menos populosas", "Estradas, \ncidades", "Escolha da cidade de destino em cada etapa do caminho", "Cidades vizinhas da cidade atual,\ndistância entre cidades e\npopulação das cidades",
+  ),
+  caption: [Modelagem *PEAS* do sistema de planejamento de rota.],
+) <peasTable>
 
 #lorem(20)
 $
@@ -85,22 +112,12 @@ See @cool for details on how to do something cool.
 
 = Resultados
 
-#table(
-  columns: (1fr, 1fr, 1fr, 1fr),
-  table.header[Month][Title][Author][Genre],
-  
-  [January], [The Great Gatsby], [F. Scott Fitzgerald], [Classic],
-  [February], [To Kill a Mockingbird], [Harper Lee], [Drama],
-  [March], [1984], [George Orwell], [Dystopian],
-  [April], [The Catcher in the Rye], [J.D. Salinger], [Coming-of-Age],
-)
-
 = Conclusão 
 
 #pagebreak()
 #show: appendix.with(
-  title: "Anexos",
+  title: "Apêncice",
 )
 
-= Anexo 1
+= Cáclulo da Distância de Harvesine <harvesine>
 #lorem(35)
