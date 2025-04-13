@@ -1,4 +1,5 @@
 using JSON
+using DataStructures
 
 struct City
     name::String
@@ -108,6 +109,68 @@ function get_connected_cities(network::CityNetwork, city_index::Int)::Vector{Int
     return network.adjacency_list[city_index]
 end
 
+mutable struct Node
+    state::Int
+    parent::Union{Node, Nothing}
+    action::Int
+    path_cost::Float64
+end
+
+function AStarSearch(start::Int, goal::Int, network::CityNetwork, distances::Matrix{Float64})::Vector{Node}
+    node = Node(start, nothing, -1, 0.0)
+    frontier = PriorityQueue{Node, Float64}()
+    explored = Set{Int}()
+    
+    enqueue!(frontier, node, 0.0)
+
+    while true
+        if isempty(frontier)
+            return []  # Failure! No path found
+        end
+        
+        current_node = dequeue!(frontier)
+
+        if current_node.state == goal
+            solution = Vector{Node}()
+            while !isnothing(current_node.parent)
+                push!(solution, current_node)
+                current_node = current_node.parent
+            end
+            return solution
+        end
+        
+        push!(explored, current_node.state)
+        
+        for neighbor in get_connected_cities(network, current_node.state)
+            if !(neighbor ∈ explored || neighbor ∈ keys(frontier))
+                cost = current_node.path_cost + distances[current_node.state, neighbor]
+                # a-star variation add heuristic
+                cost += distances[neighbor, goal]  # Add heuristic (straight-line distance)
+                child_node = Node(
+                    neighbor, 
+                    current_node, 
+                    -1,  # Action is not defined here
+                    cost
+                )
+                enqueue!(frontier, child_node, cost)
+            elseif neighbor ∈ keys(frontier)
+                # Check if the new path is cheaper
+                existing_node = frontier[neighbor]
+                if current_node.path_cost + distances[current_node.state, neighbor] < existing_node.path_cost
+                    # Update the node in the priority queue
+                    child_node = Node(
+                        neighbor, 
+                        current_node, 
+                        -1,  # Action is not defined here
+                        current_node.path_cost + distances[current_node.state, neighbor] + distances[neighbor, goal]
+                    )
+                    enqueue!(frontier, child_node, child_node.path_cost)
+                end
+            end
+        end
+    end
+end
+
 function main()
     # Load city data
     data_path = joinpath(@__DIR__, "data", "cities.json")
@@ -200,6 +263,23 @@ function main()
         println("Total distance: $(round(path_distance, digits=2)) km")
     end
 
+    # Example: A-Star from New York (idx 1) to Kansas City (idx 37)
+
+    start_city_index = 2  # Los Angeles
+    goal_city_index = 32  # Sacramento
+
+    println("\nPerforming A* Search from $(cities[start_city_index].name) to $(cities[goal_city_index].name)...")
+
+    path = AStarSearch(start_city_index, goal_city_index, city_network, distance_matrix)
+
+    if isempty(path)
+        println("No path found!")
+    else
+        println("Path found:")
+        for node in path
+            println("  $(cities[node.state].name) (cost: $(node.path_cost))")
+        end
+    end
 end
 
 main()
