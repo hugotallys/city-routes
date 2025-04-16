@@ -169,6 +169,106 @@ function AStarSearch(start::Int, goal::Int, network::CityNetwork, distances::Mat
     return Vector{Node}()  # No path found
 end
 
+function AStarSearchWithHistory(start::Int, goal::Int, network::CityNetwork, 
+                               distances::Matrix{Float64}, history_file::String="search_history.txt")::Vector{Node}
+    # Initialize data structures
+    frontier = PriorityQueue{Int, Float64}()
+    visited = Dict{Int, Node}()
+    explored = Set{Int}()
+    g_costs = Dict{Int, Float64}()
+    
+    # For recording history
+    open(history_file, "w") do file
+        # Write initial state
+        write(file, "$start\n")
+    end
+    
+    # History for recording expansion at each step
+    expansion_history = [[start]]
+    current_step = 2
+    
+    # Initialize starting node
+    start_node = Node(start, nothing, -1, 0.0)
+    visited[start] = start_node
+    g_costs[start] = 0.0
+    
+    # Calculate f-cost for the starting node
+    f_cost = distances[start, goal]
+    frontier[start] = f_cost
+
+    while !isempty(frontier)
+        # Get the node with lowest f-cost
+        current_state, _ = dequeue_pair!(frontier)
+        current_node = visited[current_state]
+        
+        push!(explored, current_state)
+        
+        # Check if we've reached the goal
+        if current_state == goal
+            # Save the final state of exploration
+            open(history_file, "a") do file
+                write(file, join(collect(explored), ","), "\n")
+            end
+            
+            # Add the final expansion to history
+            push!(expansion_history, collect(explored))
+            
+            # Save all history as one file at the end
+            open(history_file, "w") do file
+                for step in expansion_history
+                    write(file, join(step, ","), "\n")
+                end
+            end
+            
+            return construct_path(visited, goal)
+        end
+        
+        # Track nodes that will be added to frontier in this step
+        new_frontier_nodes = Int[]
+        
+        # Explore neighbors
+        for neighbor in get_connected_cities(network, current_state)
+            if neighbor in explored
+                continue
+            end
+            
+            # Calculate new g-cost (actual path cost)
+            new_g_cost = g_costs[current_state] + distances[current_state, neighbor]
+            
+            if !haskey(visited, neighbor) || new_g_cost < g_costs[neighbor]
+                # Update or create node
+                neighbor_node = Node(neighbor, current_node, -1, new_g_cost)
+                visited[neighbor] = neighbor_node
+                g_costs[neighbor] = new_g_cost
+                
+                # Calculate f-cost (g + h)
+                f_cost = new_g_cost + distances[neighbor, goal]
+                frontier[neighbor] = f_cost
+                
+                # Add to the current step's frontier
+                push!(new_frontier_nodes, neighbor)
+            end
+        end
+        
+        # Record the current state of exploration (all explored nodes plus new frontier nodes)
+        current_expansion = vcat(collect(explored), new_frontier_nodes)
+        push!(expansion_history, current_expansion)
+        
+        # Print current expansion step (for debugging)
+        # println("Step $current_step: ", join(current_expansion, ","))
+        current_step += 1
+    end
+    
+    # Save history even if no path is found
+    open(history_file, "w") do file
+        for step in expansion_history
+            write(file, join(step, ","), "\n")
+        end        
+    end
+    
+    return Vector{Node}()  # No path found
+end
+
 function construct_path(visited::Dict{Int, Node}, goal::Int)::Vector{Node}
     path = Vector{Node}()
     current_state = goal
@@ -313,6 +413,174 @@ function BidirectionalAStarSearch(start::Int, goal::Int, network::CityNetwork, d
     return Vector{Node}()  # No path found
 end
 
+function BidirectionalAStarSearchWithHistory(start::Int, goal::Int, network::CityNetwork, 
+                                           distances::Matrix{Float64}, history_file::String="bi_astar_expansion.txt")::Vector{Node}
+    # Forward search data structures (start to goal)
+    forward_frontier = PriorityQueue{Int, Float64}()
+    forward_visited = Dict{Int, Node}()
+    forward_explored = Set{Int}()
+    
+    # Backward search data structures (goal to start)
+    backward_frontier = PriorityQueue{Int, Float64}()
+    backward_visited = Dict{Int, Node}()
+    backward_explored = Set{Int}()
+    
+    # For recording history - track expansion of both frontiers
+    expansion_history = []
+    
+    # Initialize forward search
+    start_node = Node(start, nothing, -1, 0.0)
+    forward_frontier[start] = 0.0
+    forward_visited[start] = start_node
+    
+    # Initialize backward search
+    goal_node = Node(goal, nothing, -1, 0.0)
+    backward_frontier[goal] = 0.0
+    backward_visited[goal] = goal_node
+    
+    # Best meeting point tracking
+    best_cost = Inf
+    best_meeting_point = -1
+    
+    # Initialize history with start and goal
+    combined_frontier = Set{Int}([start, goal])
+    push!(expansion_history, collect(combined_frontier))
+    
+    # Continue while both frontiers have nodes
+    while !isempty(forward_frontier) && !isempty(backward_frontier)
+        # Check if we can terminate early with optimal path
+        if best_cost < Inf && 
+           peek(forward_frontier)[2] + peek(backward_frontier)[2] >= best_cost
+            break
+        end
+        
+        # Forward search expansion
+        current_state, _ = dequeue_pair!(forward_frontier)
+        push!(forward_explored, current_state)
+        current_node = forward_visited[current_state]
+        
+        # Check if we've found a meeting point
+        if current_state in backward_explored
+            path_cost = current_node.path_cost + backward_visited[current_state].path_cost
+            if path_cost < best_cost
+                best_cost = path_cost
+                best_meeting_point = current_state
+            end
+        end
+        
+        # New frontier nodes from forward expansion
+        new_forward_frontier = Set{Int}()
+        
+        # Expand forward neighbors
+        for neighbor in get_connected_cities(network, current_state)
+            if neighbor in forward_explored
+                continue
+            end
+            
+            new_cost = current_node.path_cost + distances[current_state, neighbor]
+            
+            if !haskey(forward_visited, neighbor) || new_cost < forward_visited[neighbor].path_cost
+                # Create or update node
+                neighbor_node = Node(neighbor, current_node, -1, new_cost)
+                forward_visited[neighbor] = neighbor_node
+                # Priority is f(n) = g(n) + h(n) where h(n) is heuristic
+                forward_frontier[neighbor] = new_cost + distances[neighbor, goal]
+                
+                # Add to new frontier nodes
+                push!(new_forward_frontier, neighbor)
+                
+                # Check if this creates a meeting point
+                if neighbor in backward_explored
+                    path_cost = new_cost + backward_visited[neighbor].path_cost
+                    if path_cost < best_cost
+                        best_cost = path_cost
+                        best_meeting_point = neighbor
+                    end
+                end
+            end
+        end
+        
+        # Backward search expansion
+        current_state, _ = dequeue_pair!(backward_frontier)
+        push!(backward_explored, current_state)
+        current_node = backward_visited[current_state]
+        
+        # Check if we've found a meeting point
+        if current_state in forward_explored
+            path_cost = forward_visited[current_state].path_cost + current_node.path_cost
+            if path_cost < best_cost
+                best_cost = path_cost
+                best_meeting_point = current_state
+            end
+        end
+        
+        # New frontier nodes from backward expansion
+        new_backward_frontier = Set{Int}()
+        
+        # Expand backward neighbors
+        for neighbor in get_connected_cities(network, current_state)
+            if neighbor in backward_explored
+                continue
+            end
+            
+            new_cost = current_node.path_cost + distances[current_state, neighbor]
+            
+            if !haskey(backward_visited, neighbor) || new_cost < backward_visited[neighbor].path_cost
+                # Create or update node
+                neighbor_node = Node(neighbor, current_node, -1, new_cost)
+                backward_visited[neighbor] = neighbor_node
+                # Priority uses distance to start as heuristic
+                backward_frontier[neighbor] = new_cost + distances[neighbor, start]
+                
+                # Add to new frontier nodes
+                push!(new_backward_frontier, neighbor)
+                
+                # Check if this creates a meeting point
+                if neighbor in forward_explored
+                    path_cost = forward_visited[neighbor].path_cost + new_cost
+                    if path_cost < best_cost
+                        best_cost = path_cost
+                        best_meeting_point = neighbor
+                    end
+                end
+            end
+        end
+        
+        # Create combined frontier for visualization
+        combined_explored = union(forward_explored, backward_explored)
+        combined_frontier = union(
+            Set(keys(forward_frontier)), 
+            Set(keys(backward_frontier)),
+            new_forward_frontier,
+            new_backward_frontier,
+            combined_explored
+        )
+        
+        # Record expansion history
+        push!(expansion_history, collect(combined_frontier))
+    end
+    
+    # Save history to file
+    open(history_file, "w") do file
+        for step in expansion_history
+            write(file, join(step, ","), "\n")
+        end
+    end
+    
+    # If we found a meeting point, construct the path
+    if best_meeting_point != -1
+        solution = construct_bidirectional_path(best_meeting_point, forward_visited, backward_visited, distances)
+        
+        # Save solution path separately
+        solution_file = replace(history_file, "expansion.txt" => "solution.txt")
+        save_solution_path(solution, solution_file)
+        
+        return solution
+    end
+    
+    return Vector{Node}()  # No path found
+end
+
 function construct_bidirectional_path(meeting_point::Int, forward_visited::Dict{Int, Node}, backward_visited::Dict{Int, Node}, distances::Matrix{Float64})::Vector{Node}
     # Build forward path (start to meeting point)
     forward_path = Node[]
@@ -369,6 +637,19 @@ function construct_bidirectional_path(meeting_point::Int, forward_visited::Dict{
     return vcat(forward_path, backward_path)
 end
 
+function save_solution_path(path::Vector{Node}, filename::String="astar_solution.txt")
+    # Extract the city indices from the path nodes
+    indices = [node.state for node in path]
+    
+    # Save to file
+    open(filename, "w") do file
+        # Write all indices on a single line, comma-separated
+        write(file, join(indices, ","))
+    end
+    
+    println("Solution path saved to $filename")
+end
+
 function main()
     # Load city data
     data_path = joinpath(@__DIR__, "data", "cities.json")
@@ -397,7 +678,7 @@ function main()
     
     # Test Case 1: Medium distance path
     start_city_index = 20  # Los Angeles
-    goal_city_index = 6   # Sacramento
+    goal_city_index = 6 # Sacramento
     
     println("\nSearching for path from $(cities[start_city_index].name) to $(cities[goal_city_index].name)")
     
@@ -417,6 +698,7 @@ function main()
     else
         println("  Path found with $(length(bi_a_star_path)) steps")
         println("  Execution time: $(round(bi_a_star_time * 1000, digits=2)) ms")
+        println("  Path Cost: $(round(bi_a_star_path[end].path_cost, digits=2)) km")
         println("  Memory allocated: $(round(bi_a_star_memory / 1024, digits=2)) KB")
         
         if !isempty(bi_a_star_path)
@@ -439,12 +721,23 @@ function main()
     end
     a_star_memory = @allocated AStarSearch(start_city_index, goal_city_index, city_network, distance_matrix)
     
+    # Replace the previous call to AStarSearch with:
+    history_file = joinpath(@__DIR__, "data", "astar_expansion.txt")
+    a_star_path = AStarSearchWithHistory(start_city_index, goal_city_index, city_network, distance_matrix, history_file)
+
+    # After finding a successful path:
+    if !isempty(a_star_path)
+        solution_file = joinpath(@__DIR__, "data", "astar_solution.txt")
+        save_solution_path(a_star_path, solution_file)
+    end
+
     # Print A* results
     if isempty(a_star_path)
         println("  No path found!")
     else
         println("  Path found with $(length(a_star_path)) steps")
         println("  Execution time: $(round(a_star_time * 1000, digits=2)) ms")
+        println("  Path Cost: $(round(a_star_path[end].path_cost, digits=2)) km")
         println("  Memory allocated: $(round(a_star_memory / 1024, digits=2)) KB")
         
         if !isempty(a_star_path)
@@ -491,6 +784,7 @@ function main()
     else
         println("  Path found with $(length(far_a_star_path)) steps")
         println("  Execution time: $(round(far_a_star_time * 1000, digits=2)) ms")
+        println("  Path Cost: $(round(far_a_star_path[end].path_cost, digits=2)) km")
         println("  Memory allocated: $(round(far_a_star_memory / 1024, digits=2)) KB")
         
     end
@@ -501,13 +795,29 @@ function main()
         far_bi_a_star_path = BidirectionalAStarSearch(far_start_city_index, far_goal_city_index, city_network, distance_matrix)
     end
     far_bi_a_star_memory = @allocated BidirectionalAStarSearch(far_start_city_index, far_goal_city_index, city_network, distance_matrix)
-    
+
+    # Add this to your main() function
+
+    # Bidirectional A* Search with history for visualization
+    println("\nRunning Bidirectional A* Search with history tracking...")
+    bi_history_file = joinpath(@__DIR__, "data", "bi_astar_expansion.txt")
+    bi_a_star_path_with_history = BidirectionalAStarSearchWithHistory(
+        far_start_city_index, 
+        far_goal_city_index, 
+        city_network, 
+        distance_matrix, 
+        bi_history_file
+    )
+
+    println("Bidirectional A* search history saved to $bi_history_file")
+
     # Print Bidirectional A* results
     if isempty(far_bi_a_star_path)
         println("  No path found!")
     else
         println("  Path found with $(length(far_bi_a_star_path)) steps")
         println("  Execution time: $(round(far_bi_a_star_time * 1000, digits=2)) ms")
+        println("  Path Cost: $(round(far_bi_a_star_path[end].path_cost, digits=2)) km")
         println("  Memory allocated: $(round(far_bi_a_star_memory / 1024, digits=2)) KB")
       
     end

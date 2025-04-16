@@ -1,6 +1,8 @@
 # City Routes
 
-A Julia project for analyzing city connections and distances.
+![A* Algorithm Visualization](imgs/ASTAR.gif)
+
+A Julia project for minimum path cost search in urban networks.
 
 ## Installation
 
