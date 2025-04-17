@@ -677,8 +677,8 @@ function main()
     println("\n============= SEARCH ALGORITHM COMPARISON =============")
     
     # Test Case 1: Medium distance path
-    start_city_index = 20  # Los Angeles
-    goal_city_index = 6 # Sacramento
+    start_city_index = 1  # Los Angeles
+    goal_city_index = 2 # Sacramento
     
     println("\nSearching for path from $(cities[start_city_index].name) to $(cities[goal_city_index].name)")
     
